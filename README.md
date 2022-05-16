@@ -1,1 +1,1 @@
-This is SLIT tracker telegram bot.
+This is [SLIT](https://acaai.org/allergies/management-treatment/allergy-immunotherapy/slit/) tracker telegram bot.
