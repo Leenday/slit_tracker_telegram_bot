@@ -94,9 +94,21 @@ Telegram::Bot::Client.run(TOKEN) do |bot|
         potion_pressing_count: answers[:times_pushed].to_i,
         potion_side_effects: answers[:side_effects]
       )
-      bot.api.send_message(chat_id: message.chat.id, text: 'Спасибо! Ваш ответ записан')
+      bot.api.send_message(
+        chat_id: message.chat.id,
+        text: 'Спасибо! Ваш ответ записан',
+        reply_markup: Telegram::Bot::Types::ReplyKeyboardRemove.new(
+          remove_keyboard: true
+        )
+      )
     when '/нет', '/Нет'
-      bot.api.send_message(chat_id: message.chat.id, text: 'Тогда до завтра)')
+      bot.api.send_message(
+        chat_id: message.chat.id,
+        text: 'Тогда до завтра)',
+        reply_markup: Telegram::Bot::Types::ReplyKeyboardRemove.new(
+          remove_keyboard: true
+        )
+      )
     else
       if message.reply_to_message.present?
         case message.reply_to_message.text
