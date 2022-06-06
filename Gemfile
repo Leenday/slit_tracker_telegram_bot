@@ -12,6 +12,7 @@ gem 'dotenv'
 gem 'pg'
 # standalone_migrations need rake to be able to create migrations and run them, as in Rails
 gem 'rake'
+gem 'sidekiq'
 # gem used in non-rails and non-ruby applications
 gem 'standalone_migrations'
 
