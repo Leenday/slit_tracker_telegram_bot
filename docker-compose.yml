@@ -3,17 +3,22 @@ services:
   bot:
     build: .
     volumes:
+      &bot-volumes
       - .:/bot
       - ~/.bash_history:/root/.bash_history
       - &bundle-cache-volume bundle_cache:/bundle_cache
     depends_on:
       - db
     environment:
+      &bot-environment
       TZ: "Europe/Moscow"
+      REDIS_URL: redis://redis
     tty: true
-    command: exe/app
+    # command: exe/app
+    command: bundle exec ruby /bot/app/application.rb && bundle exec ruby /bot/scheduler.rb
     env_file:
       - .env
+    restart: on-failure
   db:
     image: postgres:12.0-alpine
     ports:
@@ -28,17 +33,19 @@ services:
     image: redis
   sidekiq:
     build: .
-    # command: bundle exec sidekiq -r ./config/initializers/sidekiq.rb
-    command: bundle exec sidekiq -r ./app/workers/load_workers.rb
+    # command: bundle exec sidekiq -r /bot/config/initializers/sidekiq.rb
+    command: bash -c "bundle exec sidekiq -r ./app/workers/load_workers.rb"
     depends_on:
       - redis
       - db
-    volumes:
-      - .:/bot
-      - redis
-      - db
+    # volumes:
+    #   - .:/bot
+    #   - redis
+    #   - db
     env_file:
       - .env
+    environment: *bot-environment
+    volumes: *bot-volumes
 volumes:
   bundle_cache:
   postgres_data:

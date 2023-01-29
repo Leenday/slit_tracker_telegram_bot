@@ -6,6 +6,8 @@ require './app/models/reminder'
 require './app/models/reception_record'
 require './db/connection'
 require './scheduler'
+# require './app/services/export_reception_records'
+require './app/workers/remind_worker'
 
 require 'telegram/bot'
 require 'faraday'
@@ -16,6 +18,7 @@ require 'dotenv'
 require 'yaml'
 require 'erb'
 require 'rufus-scheduler'
+require 'sidekiq/api'
 
 DatabaseConnection.connect
 
@@ -23,7 +26,12 @@ TOKEN = Dotenv.load['TOKEN']
 
 def fetch_answer(bot, key, answers = {})
   bot.listen do |answer|
-    answers[key] = answer.text
+    case answer
+    when Telegram::Bot::Types::CallbackQuery
+      answers[key] = answer.data
+    when Telegram::Bot::Types::Message
+      answers[key] = answer.text
+    end
     break
   end
 end
@@ -39,7 +47,8 @@ end
 
 def times_pushed_question(bot, message)
   text = 'Сколько нажатий на дозатор сделали?'
-  answers = Telegram::Bot::Types::ReplyKeyboardMarkup.new(keyboard: [%w[1 2 3 4 5]], one_time_keyboard: true, resize_keyboard: true)
+  answers = Telegram::Bot::Types::ReplyKeyboardMarkup.new(keyboard: [%w[1 2 3 4 5]], one_time_keyboard: true,
+                                                          resize_keyboard: true)
   bot.api.send_message(chat_id: message.chat.id, text: text, reply_markup: answers)
 end
 
@@ -47,7 +56,8 @@ def side_effects_question(bot, message)
   text = 'Заметили ли вы побочные реакции?'
   yes = 'Да'
   no = 'Нет'
-  answers = Telegram::Bot::Types::ReplyKeyboardMarkup.new(keyboard: [[yes, no]], one_time_keyboard: true, resize_keyboard: true)
+  answers = Telegram::Bot::Types::ReplyKeyboardMarkup.new(keyboard: [[yes, no]], one_time_keyboard: true,
+                                                          resize_keyboard: true)
   bot.api.send_message(chat_id: message.chat.id, text: text, reply_markup: answers)
 end
 
@@ -55,21 +65,62 @@ def potion_color_question(bot, message)
   text = 'Флакон какой дозировки использовали?'
   blue = '10 ИР/мл (флакон с голубой крышкой)'
   violet = '300 ИР/мл (флакон с фиолетовой крышкой)'
-  answers = Telegram::Bot::Types::ReplyKeyboardMarkup.new(keyboard: [[blue, violet]], one_time_keyboard: true, resize_keyboard: true)
+  answers = Telegram::Bot::Types::ReplyKeyboardMarkup.new(keyboard: [[blue, violet]], one_time_keyboard: true,
+                                                          resize_keyboard: true)
   bot.api.send_message(chat_id: message.chat.id, text: text, reply_markup: answers)
+end
+
+def month_question(bot, message)
+  text = 'За какой месяц выгрузить записи?'
+  months_callbacks = [
+    [
+      Telegram::Bot::Types::InlineKeyboardButton.new(text: 'Январь', callback_data: '1'),
+      Telegram::Bot::Types::InlineKeyboardButton.new(text: 'Февраль', callback_data: '2'),
+      Telegram::Bot::Types::InlineKeyboardButton.new(text: 'Март', callback_data: '3')
+    ],
+    [
+      Telegram::Bot::Types::InlineKeyboardButton.new(text: 'Апрель', callback_data: '4'),
+      Telegram::Bot::Types::InlineKeyboardButton.new(text: 'Май', callback_data: '5'),
+      Telegram::Bot::Types::InlineKeyboardButton.new(text: 'Июнь', callback_data: '6')
+    ],
+    [
+      Telegram::Bot::Types::InlineKeyboardButton.new(text: 'Июль', callback_data: '7'),
+      Telegram::Bot::Types::InlineKeyboardButton.new(text: 'Август', callback_data: '8'),
+      Telegram::Bot::Types::InlineKeyboardButton.new(text: 'Сентябрь', callback_data: '9')
+    ],
+    [
+      Telegram::Bot::Types::InlineKeyboardButton.new(text: 'Октябрь', callback_data: '10'),
+      Telegram::Bot::Types::InlineKeyboardButton.new(text: 'Ноябрь', callback_data: '11'),
+      Telegram::Bot::Types::InlineKeyboardButton.new(text: 'Декабрь', callback_data: '12')
+    ]
+  ]
+  markup_retry = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: months_callbacks)
+  bot.api.send_message(chat_id: message.chat.id, text: text, reply_markup: markup_retry)
+end
+
+def email_question(bot, message)
+  text = 'Введите почту на которую отправить записи.'
+  # TODO: validation for email
+  bot.api.send_message(chat_id: message.chat.id, text: text)
 end
 
 Telegram::Bot::Client.run(TOKEN) do |bot|
   bot.listen do |message|
+    puts ('#' * 100).to_s
+    puts message.chat.id
+    puts ('#' * 100).to_s
     case message.text
     when '/start', 'start'
       bot.api.send_message(chat_id: message.chat.id, text: "Привет, #{message.from.first_name}, я дневник АСИТ!
       Помогаю отслеживать, когда и в какой дозировке вы принимали препарат для АСИТ.
       Благодаря мне ваш доктор определит эффективность терапии.
-      Нажимайте «Выбрать язык» или введите \"старт\" чтобы узнать, как я устроен.
-")
+      Введите /help, /h или /commands для списка команд")
     when '/commands', 'commands'
-      bot.api.send_message(chat_id: message.chat.id, text: "Available commands, 'ada', 'start', 'commands'!")
+      text = <<~DOC
+        /remind - настроить оповещения
+        /remind_off - отключить оповещения
+      DOC
+      bot.api.send_message(chat_id: message.chat.id, text: text)
     when '/remind'
       bot.api.send_message(
         chat_id: message.chat.id,
@@ -78,6 +129,14 @@ Telegram::Bot::Client.run(TOKEN) do |bot|
           force_reply: true
         )
       )
+    when '/remind_off'
+      bot.api.send_message(
+        chat_id: message.chat.id,
+        text: 'Оповещения отключены'
+      )
+      reminder = Reminder.find_by(chat_id: message.chat.id)
+      Sidekiq::ScheduledSet.new.find_job(reminder.worker_id)&.delete
+      reminder.update_attribute(:charged, false)
     when '/да', '/Да'
       answers = { initial: 'Да' }
 
@@ -109,21 +168,55 @@ Telegram::Bot::Client.run(TOKEN) do |bot|
           remove_keyboard: true
         )
       )
+    # when '/выгрузить'
+    #   answers = {}
+
+    #   month_question(bot, message)
+    #   fetch_answer(bot, :month, answers)
+    #   email_question(bot, message)
+    #   fetch_answer(bot, :email, answers)
+    #   ExportReceptionRecords.export(answers[:month], message.chat.id)
+    #   puts answers
+    #   bot.api.send_message(
+    #     chat_id: message.chat.id,
+    #     text: 'Отправлено!',
+    #     reply_markup: Telegram::Bot::Types::ReplyKeyboardRemove.new(
+    #       remove_keyboard: true
+    #     )
+    #   )
     else
       if message.reply_to_message.present?
         case message.reply_to_message.text
         when 'Введите время в формате ЧЧ:ММ по Москве.'
           if Validator.valid_time_format?(message.text)
-            scheduler = Scheduler.new(message.chat.id, message.text, bot)
-            Reminder.create(chat_id: message.chat.id, remind_at: message.text, worker_id: scheduler.repeat_daily.id)
-            bot.api.send_message(chat_id: message.chat.id, text: "Отлично, буду напоминать в #{message.text} каждый день")
+            Reminder
+              .find_or_initialize_by(chat_id: message.chat.id)
+              .update_attributes(remind_at: message.text)
+            bot.api.send_message(
+              chat_id: message.chat.id,
+              text: "Отлично, буду напоминать в #{message.text} каждый день",
+              reply_markup: Telegram::Bot::Types::ReplyKeyboardRemove.new(
+                remove_keyboard: true
+              )
+            )
+            reminder = Reminder.find_by(chat_id: message.chat.id)
+            job_id = RemindWorker.perform_at(
+              DateTime.now.change({ hour: reminder.remind_at.hour, min: reminder.remind_at.min,
+                                    sec: 0 }).to_i, reminder.chat_id
+            )
+            reminder.update_attribute(:worker_id, job_id)
           else
             bot.api.send_message(chat_id: message.chat.id, text: 'Неверный формат')
           end
         end
       else
-        bot.api.send_message(chat_id: message.chat.id, text: 'test!')
+        bot.api.send_message(chat_id: message.chat.id,
+                             text: 'Я такого пока не знаю, но, возможно, разработавший меня кожаный мешок добавит это в будущем.')
       end
     end
+  rescue Telegram::Bot::Exceptions::ResponseError
+    sleep(30)
+  rescue Faraday::ConnectionFailed
+    sleep(30)
   end
 end

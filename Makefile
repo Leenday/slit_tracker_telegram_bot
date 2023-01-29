@@ -6,7 +6,3 @@ rm_none_images:
 
 db_setup:
 	docker-compose run --rm bot bash -c "rake db:create db:migrate"
-
-rm_images:
-	docker images | grep '^<none>' | tr -s ' ' | cut -d ' ' -f 3 | xargs docker rmi
-
