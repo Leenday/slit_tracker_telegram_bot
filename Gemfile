@@ -22,3 +22,5 @@ gem 'yaml'
 gem 'telegram-bot-ruby'
 
 gem 'rufus-scheduler', '~> 3.8', '>= 3.8.1'
+
+gem 'rubyXL'

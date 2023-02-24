@@ -46,6 +46,7 @@ services:
       - .env
     environment: *bot-environment
     volumes: *bot-volumes
+    restart: always
 volumes:
   bundle_cache:
   postgres_data:
