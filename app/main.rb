@@ -76,18 +76,17 @@ def year_question(bot, message)
   year_callbacks = unique_years.map do |year|
     Telegram::Bot::Types::InlineKeyboardButton.new(text: year, callback_data: year)
   end
-  markup_retry = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: year_callbacks)
-  bot.api.send_message(chat_id: message.chat.id, text: text, reply_markup: markup_retry, one_time_keyboard: true)
+  markup_retry = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: year_callbacks,
+                                                                one_time_keyboard: true)
+  bot.api.send_message(chat_id: message.chat.id, text: text, reply_markup: markup_retry)
 end
 
-def email_question(bot, message)
-  text = 'Введите почту на которую отправить записи.'
-  # TODO: validation for email
-  bot.api.send_message(chat_id: message.chat.id, text: text)
+def appropriate_year?(year)
+  year.to_i.digits.size == 4
 end
-
 Telegram::Bot::Client.run(TOKEN) do |bot|
   bot.listen do |message|
+    puts message.inspect
     case message
     when Telegram::Bot::Types::CallbackQuery
       next
@@ -158,8 +157,14 @@ Telegram::Bot::Client.run(TOKEN) do |bot|
       when '/выгрузить'
         answers = {}
 
-        year_question(bot, message)
+        telegram_response = year_question(bot, message)
+        message_id = telegram_response.dig('result', 'message_id')
         fetch_answer(bot, :year, answers)
+        bot.api.editMessageReplyMarkup(chat_id: message.chat.id, message_id: message_id)
+        unless appropriate_year?(answers[:year])
+          bot.api.send_message(chat_id: message.chat.id, text: 'Неверные данные')
+          next
+        end
         ExportReceptionRecords.export(answers[:year], message.chat.id)
       else
         if message.reply_to_message.present?

@@ -11,10 +11,10 @@ require 'rubyXL/convenience_methods/worksheet'
 
 class ExportReceptionRecords
   DatabaseConnection.connect
-  def self.export(month, chat_id)
+  def self.export(year, chat_id)
     # csv.open('./tmp/receipt_records/test.xlsx', 'wb') do |csv|
     #   csv << ['дата', 'прием асит', 'дозировка', 'количество нажатий', 'побочки']
-    #   get_reception_records(month, chat_id).each do |rr|
+    #   get_reception_records(year, chat_id).each do |rr|
     #     csv << [rr.created_at.strftime('%v'),
     #             rr.daily_status_reception,
     #             rr.potion_characteristics,
@@ -24,13 +24,14 @@ class ExportReceptionRecords
     # end
     workbook = RubyXL::Workbook.new
     worksheet = workbook[0]
-    worksheet.sheet_name = 'История приемов АСИТ'
-    get_reception_records(month, chat_id).each_with_index do |rr, index|
+    worksheet.sheet_name = "История приемов АСИТ за #{year} год"
+    get_reception_records(year, chat_id).each_with_index do |rr, index|
       worksheet.add_cell(index, 0, rr.created_at.strftime('%v'))
       worksheet.add_cell(index, 1, rr.daily_status_reception)
       worksheet.add_cell(index, 2, rr.potion_characteristics)
       worksheet.add_cell(index, 3, rr.potion_pressing_count)
       worksheet.add_cell(index, 4, rr.potion_side_effects)
+      worksheet.change_row_fill(index, 'dbdbdb') if index.even?
     end
     worksheet.insert_row(0)
     worksheet.add_cell(0, 0, 'Дата')
@@ -43,15 +44,12 @@ class ExportReceptionRecords
     worksheet.change_column_width(2, 40)
     worksheet.change_column_width(3, 20)
     worksheet.change_column_width(4, 18)
-    workbook.write('./tmp/receipt_records/slit_history.xlsx')
+    file_name = "./tmp/receipt_records/slit_history_#{year}.xlsx"
+    File.new(file_name, 'w+')
+    workbook.write(file_name)
     bot = Telegram::Bot::Client.new(TOKEN)
-    # bot.api.senddocument(chat_id: chat_id,
-    #                      document: faraday::uploadio.new('./tmp/receipt_records/test.csv',
-    #                                                      'multipart/form-data'))
-    # puts file.convert
-    bot.api.sendDocument(chat_id: chat_id,
-                         document: Faraday::UploadIO.new('./tmp/receipt_records/slit_history.xlsx',
-                                                         'multipart/form-data'))
+    bot.api.sendDocument(chat_id: chat_id, document: Faraday::UploadIO.new(file_name, 'multipart/form-data'))
+    File.delete(file_name)
   end
 
   def self.get_reception_records(year, chat_id)
