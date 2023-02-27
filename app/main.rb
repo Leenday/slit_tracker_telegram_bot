@@ -84,16 +84,13 @@ end
 def appropriate_year?(year)
   year.to_i.digits.size == 4
 end
+
 Telegram::Bot::Client.run(TOKEN) do |bot|
   bot.listen do |message|
-    puts message.inspect
     case message
     when Telegram::Bot::Types::CallbackQuery
       next
     when Telegram::Bot::Types::Message
-      puts ('#' * 100).to_s
-      puts message.chat.id
-      puts ('#' * 100).to_s
       case message.text
       when '/start', 'start'
         bot.api.send_message(chat_id: message.chat.id, text: "Привет, #{message.from.first_name}, я дневник АСИТ!
@@ -162,7 +159,7 @@ Telegram::Bot::Client.run(TOKEN) do |bot|
         fetch_answer(bot, :year, answers)
         bot.api.editMessageReplyMarkup(chat_id: message.chat.id, message_id: message_id)
         unless appropriate_year?(answers[:year])
-          bot.api.send_message(chat_id: message.chat.id, text: 'Неверные данные')
+          bot.api.send_message(chat_id: message.chat.id, text: 'Неверные данные.')
           next
         end
         ExportReceptionRecords.export(answers[:year], message.chat.id)
@@ -188,7 +185,7 @@ Telegram::Bot::Client.run(TOKEN) do |bot|
               )
               reminder.update_attribute(:worker_id, job_id)
             else
-              bot.api.send_message(chat_id: message.chat.id, text: 'Неверный формат')
+              bot.api.send_message(chat_id: message.chat.id, text: 'Неверный формат.')
             end
           end
         else

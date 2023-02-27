@@ -11,6 +11,10 @@ require 'rubyXL/convenience_methods/worksheet'
 
 class ExportReceptionRecords
   DatabaseConnection.connect
+  def self.bot
+    Telegram::Bot::Client.new(TOKEN)
+  end
+
   def self.export(year, chat_id)
     # csv.open('./tmp/receipt_records/test.xlsx', 'wb') do |csv|
     #   csv << ['дата', 'прием асит', 'дозировка', 'количество нажатий', 'побочки']
@@ -25,7 +29,12 @@ class ExportReceptionRecords
     workbook = RubyXL::Workbook.new
     worksheet = workbook[0]
     worksheet.sheet_name = "История приемов АСИТ за #{year} год"
-    get_reception_records(year, chat_id).each_with_index do |rr, index|
+    records = get_reception_records(year, chat_id)
+    if records.empty?
+      bot.api.send_message(chat_id: chat_id, text: 'Данных за этот год не обнаружено.')
+      return
+    end
+    records.each_with_index do |rr, index|
       worksheet.add_cell(index, 0, rr.created_at.strftime('%v'))
       worksheet.add_cell(index, 1, rr.daily_status_reception)
       worksheet.add_cell(index, 2, rr.potion_characteristics)
@@ -47,7 +56,6 @@ class ExportReceptionRecords
     file_name = "./tmp/receipt_records/slit_history_#{year}.xlsx"
     File.new(file_name, 'w+')
     workbook.write(file_name)
-    bot = Telegram::Bot::Client.new(TOKEN)
     bot.api.sendDocument(chat_id: chat_id, document: Faraday::UploadIO.new(file_name, 'multipart/form-data'))
     File.delete(file_name)
   end
